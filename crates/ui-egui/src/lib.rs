@@ -26,6 +26,7 @@ pub mod panels;
 pub mod prefs_live;
 pub mod state;
 pub mod theme;
+pub mod touch;
 pub mod widgets;
 
 use std::sync::Arc;
@@ -112,6 +113,8 @@ pub struct Hooks {
     /// Application actions the OS performs (`app.hide`, `app.hideOthers`, `app.showAll` on
     /// macOS). Returns false when the host doesn't handle the id.
     pub app_action: Option<Box<dyn Fn(&str) -> bool>>,
+    /// A short vibration (touch hosts: the long press that opened a context menu).
+    pub haptic: Option<Box<dyn Fn()>>,
 }
 
 impl Hooks {
@@ -209,6 +212,8 @@ pub struct EffectcraftApp {
     pub playback: Playback,
     pub dialog: Option<Dialog>,
     pub hooks: Hooks,
+    /// Touch layer: finger gestures → mouse events, plus the on-screen modifier bar.
+    pub touch: touch::Touch,
     pub fps: f32,
     last_time: f64,
     styled: bool,
@@ -298,6 +303,7 @@ impl EffectcraftApp {
             playback: Playback::default(),
             dialog: None,
             hooks: Hooks::default(),
+            touch: touch::Touch::new(),
             fps: 60.0,
             last_time: 0.0,
             styled: false,
@@ -1461,7 +1467,7 @@ impl EffectcraftApp {
         ui.painter().rect_filled(full, 0.0, t.app_bg);
         let mut top = full.min.y;
         if self.ui.show_menu_bar {
-            let mb = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), 24.0));
+            let mb = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), if self.touch.enabled { 28.0 } else { 24.0 }));
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(mb));
             child.painter().rect_filled(mb, 0.0, t.header_bg);
             menus::menu_bar(self, &mut child);
@@ -1551,6 +1557,26 @@ impl EffectcraftApp {
     pub fn take_synthetic_input(&mut self) -> Vec<egui::Event> {
         std::mem::take(&mut self.synthetic)
     }
+
+    /// Touch layer upkeep: touch-sized metrics, the modifier bar, and the actions it queued.
+    fn touch_frame(&mut self, ctx: &egui::Context) {
+        self.touch.apply_style(ctx);
+        self.touch.show_bar(ctx);
+        for a in self.touch.take_actions() {
+            let id = match a {
+                touch::Action::Undo => "edit.undo",
+                touch::Action::Redo => "edit.redo",
+            };
+            if let Err(e) = self.session.execute(id, json!({})) {
+                log::debug!("{id}: {e}");
+            }
+        }
+        if self.touch.take_haptic()
+            && let Some(h) = &self.hooks.haptic
+        {
+            h();
+        }
+    }
 }
 
 impl eframe::App for EffectcraftApp {
@@ -1559,7 +1585,8 @@ impl eframe::App for EffectcraftApp {
         self.session.end_recovery();
     }
 
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.touch.process(ctx, raw_input);
         if !self.synthetic.is_empty() {
             // Pointer events go one per frame so egui sees press → moves → release as a real drag.
             let pointer = |e: &egui::Event| matches!(e, egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. } | egui::Event::MouseWheel { .. });
@@ -1583,6 +1610,7 @@ impl eframe::App for EffectcraftApp {
         crate::i18n::set_current(language);
         if !self.styled || self.styled_language != language {
             theme::install(ctx, &self.tokens, language);
+            self.touch.style_dirty = true;
             self.styled_language = language;
             if !self.styled {
                 fit_window(ctx);
@@ -1618,6 +1646,7 @@ impl eframe::App for EffectcraftApp {
         }
         self.frame(ui);
         let ctx = ui.ctx().clone();
+        self.touch_frame(&ctx);
         // wasm32: no frame threads; render queued frames now, between UI frames.
         if cfg!(target_arch = "wasm32") && self.frames.pump(std::time::Duration::from_millis(if self.playback.playing { 24 } else { 40 })) {
             ctx.request_repaint();

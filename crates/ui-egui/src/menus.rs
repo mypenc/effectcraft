@@ -727,6 +727,22 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             crate::panels::settings::open(app, effectcraft_engine::prefs::page_id(page).unwrap_or("general"));
             Value::Null
         }
+        // Help ▸ Show Debug Log: the host shows its own (Android: a copyable dialog with this app's
+        // log); otherwise list the warnings and errors recorded this session.
+        "help.showLog" => {
+            if !app.hooks.app_action.as_ref().is_some_and(|f| f(id)) {
+                let lines = effectcraft_engine::logging::recent();
+                let text = if lines.is_empty() { "No warnings or errors were recorded this session.".to_string() } else { lines.join("\n") };
+                crate::panels::dialogs::info(app, "Debug Log", &text);
+            }
+            Value::Null
+        }
+        // Help ▸ On-Screen Touch Bar: show or hide the modifier/undo bar (touch devices).
+        "help.touchBar" => {
+            let on = p.get("value").and_then(Value::as_bool).unwrap_or(!app.touch.bar_visible);
+            app.touch.bar_visible = on;
+            json!(on)
+        }
         "app.gpuInfo" => {
             let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
             crate::panels::dialogs::info(
@@ -1273,6 +1289,7 @@ pub(crate) fn entry_checked(app: &EffectcraftApp, e: &MenuEntry) -> Option<bool>
         "view.snapToGrid" => Some(v.snap_grid),
         "view.layerControls" => Some(v.show_layer_controls),
         "playback.cacheWhenIdle" => Some(app.ui.cache_when_idle),
+        "help.touchBar" => Some(app.touch.bar_visible),
         "playback.audio" => Some(app.session.prefs.preview.active().include_audio),
         "view.res.full" | "view.res.half" | "view.res.third" | "view.res.quarter" => {
             Some(v.res.label().eq_ignore_ascii_case(e.command.trim_start_matches("view.res.")))
@@ -1598,12 +1615,25 @@ pub fn menu_bar(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
     let mut clicked: Option<(String, Value)> = None;
     let mut nav = crate::menu_keys::Nav::default();
+    // Touch metrics make buttons 34 pt tall, taller than this bar's row: trim the bar's own buttons
+    // (the menus below keep full-size, finger-sized items).
+    let touch = app.touch.enabled;
+    if touch {
+        let sp = ui.spacing_mut();
+        sp.interact_size.y = 26.0;
+        sp.button_padding = egui::vec2(7.0, 2.0);
+    }
     ui.horizontal_centered(|ui| {
         ui.add_space(6.0);
         egui::MenuBar::new().ui(ui, |ui| {
             for node in effectcraft_engine::menus::menu_bar() {
                 if let MenuNode::Submenu { label, children } = node {
                     let r = ui.menu_button(crate::i18n::label(app, "", label), |ui| {
+                        if touch {
+                            let sp = ui.spacing_mut();
+                            sp.interact_size.y = 34.0;
+                            sp.button_padding = egui::vec2(10.0, 6.0);
+                        }
                         ui.set_min_width(if label == "Effect" { 200.0 } else { 280.0 });
                         crate::widgets::menu_scroll(ui, |ui| menu_nodes(app, ui, children, &mut clicked, &mut nav, 0));
                     });

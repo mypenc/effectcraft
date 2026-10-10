@@ -87,6 +87,9 @@ impl DirectorySource {
             if let Some(l) = std::env::var_os("LOCALAPPDATA") {
                 dirs.push(PathBuf::from(l).join("Microsoft\\Windows\\Fonts"));
             }
+        } else if cfg!(target_os = "android") {
+            // Roboto, Noto and the OEM fonts: the platform keeps them read-only here.
+            dirs.extend(["/system/fonts", "/system_ext/fonts", "/product/fonts"].map(PathBuf::from));
         } else if cfg!(unix) && !cfg!(target_arch = "wasm32") {
             dirs.extend(["/usr/share/fonts", "/usr/local/share/fonts"].map(PathBuf::from));
             if let Some(h) = &home {

@@ -1216,6 +1216,8 @@ Help
   System Compatibility Report... | help.systemReport
   Enable Logging | help.enableLogging
   Reveal Logging File | help.revealLogFile
+  Show Debug Log... | help.showLog
+  On-Screen Touch Bar | help.touchBar
   ---
   Join the ArtCraft Discord... | help.discord
   Provide Feedback... | help.reportIssue

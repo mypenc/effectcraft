@@ -26,6 +26,9 @@ pub fn specs() -> Vec<CommandSpec> {
             always
         ),
         fe!("app.gpuInfo", "GPU Information...", [], None, "{}", always),
+        // Help: the on-device debug log (Android shows a copyable dialog) and the touch bar toggle.
+        fe!("help.showLog", "Show Debug Log...", ["Help"], None, "{}", always),
+        fe!("help.touchBar", "On-Screen Touch Bar", ["Help"], None, "{value?: show or hide the touch bar (default: toggle)}", always),
         fe!("app.hide", "Hide EffectCraft", [], None, "{}", always),
         // macOS: the native menu's Hide Others / Show All (the desktop app hides the other apps).
         fe!("app.hideOthers", "Hide Others", [], None, "{}", always),
