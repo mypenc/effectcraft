@@ -63,12 +63,13 @@ jobs:
               if sid == 4:
                   n, j = leb(i)
                   for _ in range(n):
-                      j += 1; fl = d[j]; j += 1; mn, j = leb(j); mx = None
+                      rt = d[j]; j += 1; fl = d[j]; j += 1; mn, j = leb(j); mx = None
                       if fl & 1: mx, j = leb(j)
-                      print("table min", mn, "max", mx)
-                      if mx is not None and mx < mn + 4: bad = True
+                      kind = {0x6f: "externref", 0x70: "funcref"}.get(rt, hex(rt))
+                      print(f"::notice::wasm table {kind} min={mn} max={mx}")
+                      if rt == 0x6f and mx is not None and mx < mn + 4: bad = True
               i = end
-          raise SystemExit("table has no room to grow" if bad else 0)
+          raise SystemExit("externref table has no room to grow" if bad else 0)
           PY
 
       - name: Add .nojekyll
