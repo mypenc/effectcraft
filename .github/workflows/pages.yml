@@ -35,9 +35,6 @@ jobs:
           fi
           wasm-bindgen --version
 
-      - name: Install binaryen (wasm-opt, smaller wasm for low-RAM devices)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq binaryen
-
       - name: Add ChromeOS memory/GPU defaults to the page
         run: |
           python3 - <<'PY'
@@ -50,6 +47,29 @@ jobs:
 
       - name: Build effectcraft-web (release)
         run: cargo xtask web
+
+      - name: Check the wasm table can grow (wasm-bindgen grows it at start-up)
+        run: |
+          python3 - <<'PY'
+          d = open("target/web/dist/effectcraft_web_bg.wasm", "rb").read()
+          def leb(i):
+              r = s = 0
+              while True:
+                  b = d[i]; i += 1; r |= (b & 0x7f) << s; s += 7
+                  if not b & 0x80: return r, i
+          i = 8; bad = False
+          while i < len(d):
+              sid = d[i]; i += 1; sz, i = leb(i); end = i + sz
+              if sid == 4:
+                  n, j = leb(i)
+                  for _ in range(n):
+                      j += 1; fl = d[j]; j += 1; mn, j = leb(j); mx = None
+                      if fl & 1: mx, j = leb(j)
+                      print("table min", mn, "max", mx)
+                      if mx is not None and mx < mn + 4: bad = True
+              i = end
+          raise SystemExit("table has no room to grow" if bad else 0)
+          PY
 
       - name: Add .nojekyll
         run: touch target/web/dist/.nojekyll
