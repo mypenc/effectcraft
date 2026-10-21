@@ -1,0 +1,69 @@
+name: Build and deploy WASM to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust with wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-bindgen CLI (version pinned by xtask)
+        run: |
+          V=$(grep -oP 'WASM_BINDGEN: &str = "\K[^"]+' xtask/src/main.rs)
+          if ! wasm-bindgen --version 2>/dev/null | grep -q "$V"; then
+            cargo install wasm-bindgen-cli --version "$V" --locked
+          fi
+          wasm-bindgen --version
+
+      - name: Install binaryen (wasm-opt, smaller wasm for low-RAM devices)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq binaryen
+
+      - name: Add ChromeOS memory/GPU defaults to the page
+        run: |
+          python3 - <<'PY'
+          p = "apps/effectcraft-web/web/index.html"
+          html = open(p, encoding="utf-8").read()
+          js = open("wasm/chromeos-defaults.js", encoding="utf-8").read()
+          assert "<head>" in html
+          open(p, "w", encoding="utf-8").write(html.replace("<head>", "<head>\n  <script>\n" + js + "  </script>", 1))
+          PY
+
+      - name: Build effectcraft-web (release)
+        run: cargo xtask web
+
+      - name: Add .nojekyll
+        run: touch target/web/dist/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

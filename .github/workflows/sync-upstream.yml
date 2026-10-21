@@ -1,0 +1,52 @@
+name: Sync upstream
+
+# Merges storytold/effectcraft main into this repo's main every hour.
+# Merge (not reset) keeps any local commits intact. If the merge conflicts,
+# the job fails and nothing is pushed.
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync:
+    # Only run in the mypenc/effectwasm repo, never in copies or forks.
+    if: github.repository == 'mypenc/effectwasm'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # The default GITHUB_TOKEN cannot push changes under .github/workflows/
+          # (needs the `workflows` permission), so upstream workflow updates were
+          # rejected. A PAT stored as SYNC_TOKEN (with `workflow` scope) is used instead.
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Merge upstream main
+        id: merge
+        run: |
+          set -euo pipefail
+          git config user.name "mypenc"
+          git config user.email "mypenc@users.noreply.github.com"
+          git remote add upstream https://github.com/storytold/effectcraft.git
+          git fetch upstream main
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Already up to date with upstream."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git merge --no-edit upstream/main
+          git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger Pages build
+        if: steps.merge.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main
