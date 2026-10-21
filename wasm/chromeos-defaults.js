@@ -7,13 +7,15 @@
     var p = new URLSearchParams(location.search);
     if (p.has("nochromeos")) return;
     if (!/\bCrOS\b/.test(navigator.userAgent) && !p.has("chromeos")) return;
-    var mem = navigator.deviceMemory || 4; // GiB, capped at 8 by the browser
     var changed = false;
     function set(k, v) { if (!p.has(k)) { p.set(k, v); changed = true; } }
-    // Every frame worker is a full engine instance with its own heap and its own GPU device.
-    set("frameworkers", mem <= 2 ? "0" : "1");
-    // 2 GB devices: no extra GPU devices at all, workers render on the CPU.
-    if (mem <= 2) set("nogpuworkers", "");
+    // Every worker that renders on the GPU opens a WebGPU device of its own. Some Chromebook
+    // GPU stacks fail to create a second context (and then lose the page's own device too), so
+    // by default use exactly one device, the page's: viewer frames render on the page's thread
+    // (frameworkers=0) and background jobs render on the CPU (nogpuworkers).
+    // Override with ?frameworkers=N, or ?nochromeos to turn all of this off.
+    set("frameworkers", "0");
+    set("nogpuworkers", "");
     if (changed) {
       var q = p.toString().replace(/=(&|$)/g, "$1");
       history.replaceState(null, "", location.pathname + "?" + q + location.hash);
