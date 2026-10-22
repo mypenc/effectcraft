@@ -129,6 +129,28 @@ fn query_flag(name: &str) -> bool {
     query().is_some_and(|p| p.has(name))
 }
 
+/// ChromeOS (or `?chromeos`): Chromebook GPU stacks share system RAM and some lose the whole
+/// WebGPU device under the GPU compositor's compute pipelines or a second device. There the
+/// window uses egui's single device only, with no GPU compositor and no GPU workers. Opt back
+/// in with `?gpu` (compositor), `?gpuworkers` and `?frameworkers=N`; `?nochromeos` turns all
+/// of this off.
+fn chromeos() -> bool {
+    if query_flag("nochromeos") {
+        return false;
+    }
+    if query_flag("chromeos") {
+        return true;
+    }
+    let nav = js_sys::Reflect::get(&js_sys::global(), &"navigator".into()).ok();
+    let ua = nav.and_then(|n| js_sys::Reflect::get(&n, &"userAgent".into()).ok()).and_then(|v| v.as_string());
+    ua.is_some_and(|ua| ua.contains("CrOS"))
+}
+
+/// Frame and job workers render on the CPU (no WebGPU device of their own).
+fn no_gpu_workers() -> bool {
+    query_flag("nogpuworkers") || (chromeos() && !query_flag("gpuworkers"))
+}
+
 fn query_value(name: &str) -> Option<String> {
     query().and_then(|p| p.get(name))
 }
@@ -149,7 +171,7 @@ pub fn session() -> Session {
         config: Some(Arc::new(persist::config())),
         offload: (!query_flag("noworkers")).then(|| {
             // Job workers render on a WebGPU device of their own (`?nogpuworkers`: their CPU).
-            worker::set_job_worker_gpu(!query_flag("nogpuworkers"));
+            worker::set_job_worker_gpu(!no_gpu_workers());
             Arc::new(worker::WorkerOffload) as Arc<dyn effectcraft_engine::offload::Offload>
         }),
         browser: Some(Arc::new(browse::WebBrowser)),
@@ -245,6 +267,9 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
                 let _ = session.execute("window.restoreScriptPanels", json!({}));
                 let mut app = EffectcraftApp::new(session);
                 app.set_gpu_failure_bridge(gpu_failures);
+                if query_flag("nogpu") || (chromeos() && !query_flag("gpu")) {
+                    app.disable_gpu_compositor();
+                }
                 app.ui.start_screen = home;
                 if let Some(r) = recovery.filter(|r| !restored && r.autosave.is_some()) {
                     app.offer_recovery(r);
@@ -253,9 +278,9 @@ pub async fn start(canvas_id: String) -> Result<(), JsValue> {
                 // Viewer frames render in frame workers (`?frameworkers=N`, 0 or `?noworkers`:
                 // on the page's thread), each on its own WebGPU device where the browser has
                 // WebGPU in workers (`?nogpuworkers`: their CPU).
-                let n = if query_flag("noworkers") { 0 } else { query_value("frameworkers").and_then(|v| v.parse().ok()).unwrap_or(2usize).min(8) };
+                let n = if query_flag("noworkers") { 0 } else { query_value("frameworkers").and_then(|v| v.parse().ok()).unwrap_or(if chromeos() { 0 } else { 2usize }).min(8) };
                 if n > 0 {
-                    app.frames.set_remote(Some(Arc::new(frames::WebFrames::start(n, !query_flag("nogpuworkers")))));
+                    app.frames.set_remote(Some(Arc::new(frames::WebFrames::start(n, !no_gpu_workers()))));
                 }
                 let (tx, rx) = std::sync::mpsc::channel();
                 api::set_sender(tx);

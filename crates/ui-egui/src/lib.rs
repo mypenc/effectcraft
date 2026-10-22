@@ -676,6 +676,14 @@ impl EffectcraftApp {
         self.gpu_failures = Some(bridge);
     }
 
+    /// Keep the GPU compositor off: egui keeps drawing the window on its own device, but
+    /// compositing, effects and viewer frames stay on the CPU. For hosts whose GPU stack
+    /// loses the device under the compositor's compute pipelines (some Chromebooks).
+    pub fn disable_gpu_compositor(&mut self) {
+        self.gpu_checked = true;
+        self.session.accel_note = Some("GPU compositor disabled for this device".into());
+    }
+
     fn apply_gpu_failure(&mut self, ctx: &egui::Context) {
         let Some(bridge) = &self.gpu_failures else { return };
         // Readback deadlines can retire the compositor without a host device notification.

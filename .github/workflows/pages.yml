@@ -35,16 +35,6 @@ jobs:
           fi
           wasm-bindgen --version
 
-      - name: Add ChromeOS memory/GPU defaults to the page
-        run: |
-          python3 - <<'PY'
-          p = "apps/effectcraft-web/web/index.html"
-          html = open(p, encoding="utf-8").read()
-          js = open("wasm/chromeos-defaults.js", encoding="utf-8").read()
-          assert "<head>" in html
-          open(p, "w", encoding="utf-8").write(html.replace("<head>", "<head>\n  <script>\n" + js + "  </script>", 1))
-          PY
-
       - name: Build effectcraft-web (release)
         run: cargo xtask web
 
