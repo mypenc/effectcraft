@@ -135,7 +135,8 @@ fn alt_dropping_a_project_item_on_the_viewer_replaces_the_layer_source() {
     drag(&mut h, item, to, Modifiers::ALT);
     assert_eq!(stack(&h), before, "no layer is added");
     let comp = h.state().session.active_comp().unwrap();
-    let replaced = comp.layers.iter().filter(|l| l.source == effectcraft_engine::project::LayerSource::Comp { item: effectcraft_engine::project::ItemId(clip) }).count();
+    let replaced =
+        comp.layers.iter().filter(|l| l.source == effectcraft_engine::project::LayerSource::Comp { item: effectcraft_engine::project::ItemId(clip) }).count();
     assert_eq!(replaced, 1, "only the layer under the pointer takes the new source");
 }
 
