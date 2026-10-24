@@ -19,6 +19,16 @@
       font: 14px/1.4 system-ui, sans-serif; pointer-events: none;
     }
     #loading img { width: 56px; height: 56px; }
+    #progress {
+      width: 220px; height: 4px; border-radius: 2px; background: #2e2f33; overflow: hidden;
+    }
+    #progress > div {
+      width: 0%; height: 100%; background: #2d8ceb; transition: width 0.1s linear;
+    }
+    #progress.indeterminate > div {
+      width: 40%; animation: progress-slide 1.1s ease-in-out infinite;
+    }
+    @keyframes progress-slide { from { margin-left: -40%; } to { margin-left: 100%; } }
     #loading .err { color: #ff8a7a; white-space: pre-wrap; max-width: 70ch; pointer-events: auto; }
     #device-lost {
       position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px;
@@ -41,7 +51,7 @@
 </head>
 <body>
   <canvas id="effectcraft_canvas"></canvas>
-  <div id="loading"><img src="favicon.svg" alt=""><div id="status">Loading EffectCraft…</div></div>
+  <div id="loading"><img src="favicon.svg" alt=""><div id="status">Loading EffectCraft…</div><div id="progress" role="progressbar" aria-label="Downloading EffectCraft" aria-valuemin="0" aria-valuemax="100"><div></div></div></div>
   <script type="module">
     import init, * as ec from "./effectcraft_web.js";
     const t0 = performance.now();
@@ -101,12 +111,46 @@
     try {
       // Compile once: the page and its render workers instantiate the same module.
       const wasmUrl = new URL("effectcraft_web_bg.wasm", location.href);
+      // Fetch the wasm as a stream, counting bytes so the loading screen can show download progress.
+      const bar = document.getElementById("progress");
+      const barFill = bar && bar.firstElementChild;
+      const fetchWasm = async () => {
+        const res = await fetch(wasmUrl);
+        if (!res.ok || !res.body) return res;
+        // Content-Length is the compressed size when the server compresses; fall back to an indeterminate bar.
+        const total = Number(res.headers.get("content-length")) || 0;
+        if (!total && bar) bar.classList.add("indeterminate");
+        let loaded = 0;
+        const reader = res.body.getReader();
+        const stream = new ReadableStream({
+          async pull(controller) {
+            const { done, value } = await reader.read();
+            if (done) {
+              if (barFill) barFill.style.width = "100%";
+              controller.close();
+              return;
+            }
+            loaded += value.byteLength;
+            if (total && bar && barFill) {
+              const pct = Math.min(100, (loaded / total) * 100);
+              barFill.style.width = pct.toFixed(1) + "%";
+              bar.setAttribute("aria-valuenow", String(Math.round(pct)));
+            }
+            controller.enqueue(value);
+          },
+          cancel(reason) { return reader.cancel(reason); },
+        });
+        return new Response(stream, { status: res.status, headers: res.headers });
+      };
       let module;
       try {
-        module = await WebAssembly.compileStreaming(fetch(wasmUrl));
+        module = await WebAssembly.compileStreaming(fetchWasm());
       } catch {
+        if (bar) bar.classList.remove("indeterminate");
+        if (barFill) barFill.style.width = "0%";
         module = await WebAssembly.compile(await (await fetch(wasmUrl)).arrayBuffer());
       }
+      if (bar) bar.classList.remove("indeterminate");
       window.effectcraftModule = module;
       await init({ module_or_path: module });
       window.effectcraftLoad.wasmMs = performance.now() - t0;
@@ -114,6 +158,8 @@
       window.effectcraftLoad.readyMs = performance.now() - t0;
     } catch (e) {
       const s = document.getElementById("status");
+      const pb = document.getElementById("progress");
+      if (pb) pb.style.display = "none";
       if (s) { s.className = "err"; s.textContent = "EffectCraft failed to start:\n" + (e && e.stack || e); }
       window.effectcraftLoad.error = String(e);
       throw e;
