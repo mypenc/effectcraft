@@ -330,7 +330,11 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
         }
         return r;
     }
-    if no_params(&params) && app.ui.focused == PanelKind::Project {
+    // The Project-panel focus redirects apply only while no text edit is open: creating a text
+    // layer leaves focus on Project while the insertion point lives in the comp, so during an
+    // edit these commands address the text context — redirected, Deselect All would clear a
+    // project selection the user is not looking at and silently swallow the edit's own end.
+    if no_params(&params) && app.ui.focused == PanelKind::Project && app.session.state.text_edit.is_none() {
         match id {
             "edit.duplicate" => return run_engine(app, ctx, "project.duplicate", json!({})),
             "edit.selectAll" => {
@@ -1622,7 +1626,10 @@ pub(crate) fn entry_checked(app: &EffectcraftApp, e: &MenuEntry) -> Option<bool>
 }
 
 pub(crate) fn entry_enabled(app: &EffectcraftApp, e: &MenuEntry) -> bool {
-    if app.ui.focused == PanelKind::Project {
+    // The Project-panel enabled rules mirror the invoke redirects, so they stand down for the
+    // same reason (see the redirect block): while a text edit is open the menu items must be
+    // enabled by what their routed command can do, or the menu grays out commands that work.
+    if app.ui.focused == PanelKind::Project && app.session.state.text_edit.is_none() {
         match e.command.as_str() {
             "edit.duplicate" => {
                 return !app.session.state.project_selection.is_empty()
@@ -1788,6 +1795,25 @@ pub fn bindings(session: &effectcraft_engine::Session) -> Vec<Binding> {
 
 fn mods_match(want: egui::Modifiers, got: egui::Modifiers) -> bool {
     want.command == got.command && want.shift == got.shift && want.alt == got.alt && (want.ctrl == got.ctrl || got.command && cfg!(not(target_os = "macos")))
+}
+
+/// Whether the `key`+`mods` chord is the current binding of `command` in the active preset
+/// (so callers that must match a shortcut themselves — like the viewer's text editor, which
+/// holds the keyboard while the shortcut dispatcher is skipped — follow rebinds).
+/// `Physical+`-only bindings never match here, exactly as for the app-wide dispatcher.
+pub fn chord_matches(session: &effectcraft_engine::Session, command: &str, key: egui::Key, mods: egui::Modifiers) -> bool {
+    bindings(session).into_iter().any(|(m, k, id, _)| id == command && k == key && mods_match(m, mods))
+}
+
+/// Whether a Deselect All chord matched by [`chord_matches`] may run while a text editor holds
+/// the keyboard. Chords carrying Cmd/Ctrl/Alt are command chords (the editor treats them as
+/// such for undo and the rest), and function keys never type, so those forward from the editor;
+/// a chord that could instead produce a character — a bare or Shift-only letter, digit or
+/// punctuation key, as from a pathological bare-letter rebinding — stays with the editor so
+/// typing keeps working, the same invariant the app-wide dispatcher honors by skipping
+/// focused text fields.
+pub fn forwardable_during_text_edit(mods: egui::Modifiers, key: egui::Key) -> bool {
+    mods.command || mods.ctrl || mods.alt || (egui::Key::F1..=egui::Key::F35).contains(&key)
 }
 
 /// Set (egui temp data) from a plain Spacebar press until its release while a tap would still

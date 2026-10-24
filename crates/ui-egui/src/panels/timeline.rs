@@ -267,10 +267,25 @@ fn whip_into_id(prop: u64) -> egui::Id {
     egui::Id::new(("tl-pickwhip-into", prop))
 }
 
-/// After a pick whip into the expression being edited: its editor takes the focus back, the
-/// cursor this many characters before the end (just after the reference).
-fn expr_refocus_id(prop: u64) -> egui::Id {
-    egui::Id::new(("tl-expr-refocus", prop))
+/// An expression editor to take the keyboard when it is next drawn: its property, the text to
+/// select as counts of characters before the end (so it fits the expression as it will be then)
+/// and the pass it was asked for in. After a pick whip into the expression being edited, the
+/// cursor goes just after the reference; after an Alt-click on a stopwatch adds an expression,
+/// its whole text is selected, so typing replaces it.
+#[derive(Clone, Copy, Debug)]
+struct ExprFocus {
+    prop: u64,
+    select: [usize; 2],
+    pass: u64,
+}
+
+fn expr_focus_id() -> egui::Id {
+    egui::Id::new("tl-expr-focus")
+}
+
+fn focus_expression(ctx: &egui::Context, prop: u64, select: [usize; 2]) {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(expr_focus_id(), ExprFocus { prop, select, pass }));
 }
 
 #[derive(Clone, Debug)]
@@ -762,15 +777,22 @@ fn display_name(app: &EffectcraftApp, l: &Layer) -> String {
 /// layer whose names contain `q` (lowercase), each with its enclosing groups. A matching group
 /// brings its whole contents.
 fn search_rows(l: &Layer, q: &str) -> Vec<Row> {
+    /// The row for a group in search results: depth, its effect's enabled flag, and the eye
+    /// switch for layer-style groups (not Blending Options).
     fn group_row(l: &Layer, g: &PropGroup, depth: usize, parent: &PropGroup) -> Row {
         let fx = matches!(g.kind, GroupKind::Effect { .. }).then_some(g.enabled);
         let eye =
             (parent.match_id == effectcraft_engine::project::styles::GROUP && g.match_id != effectcraft_engine::project::styles::BLENDING).then_some(g.enabled);
         Row { layer: l.id, depth, kind: RowKind::Group { uid: g.uid, name: g.name.clone(), open: true, has_children: !g.children.is_empty(), fx, eye } }
     }
+    /// Every visible child of `g` at `depth`, groups recursed into whole — a matching group
+    /// brings its contents. A shape group's inner Contents is elided (as in AE): no row, and
+    /// its items list at the same depth as the group itself.
     fn all(l: &Layer, g: &PropGroup, depth: usize, out: &mut Vec<Row>) {
         for c in &g.children {
             match c {
+                // A shape group's inner Contents is elided (as in AE): no row, items at the same depth.
+                Node::Group(sg) if g.match_id == "group" && sg.match_id == "contents" => all(l, sg, depth, out),
                 Node::Group(sg) => {
                     out.push(group_row(l, sg, depth, g));
                     all(l, sg, depth + 1, out);
@@ -780,9 +802,14 @@ fn search_rows(l: &Layer, q: &str) -> Vec<Row> {
             }
         }
     }
+    /// The children of `g` that match `q`: a name-matching group brings its whole contents
+    /// (`all`); otherwise the search recurses and keeps only subtrees with hits. A shape
+    /// group's inner Contents is searched through without a row of its own (as in AE).
     fn rec(l: &Layer, g: &PropGroup, depth: usize, q: &str, out: &mut Vec<Row>) {
         for c in &g.children {
             match c {
+                // A shape group's inner Contents is elided (as in AE): search through it, no row.
+                Node::Group(sg) if g.match_id == "group" && sg.match_id == "contents" => rec(l, sg, depth, q, out),
                 Node::Group(sg) if depth > 1 || group_visible(sg, l) => {
                     // An effect group also matches the name the row draws, so a search finds
                     // `高斯模糊` in a Chinese interface and `Gaussian Blur` in an English one.
@@ -1186,11 +1213,20 @@ fn collect_props(g: &PropGroup, out: &mut Vec<u64>, f: &dyn Fn(&Property) -> boo
     }
 }
 
+/// The rows for the children of `g` at `depth`: groups recurse into when their twirl-down is
+/// in `open`, text animators list their selectors and properties directly (as in AE), and a
+/// shape group's inner Contents (AE's elided `ADBE Vectors Group`) is skipped so its items
+/// list directly under the group.
 fn push_group(rows: &mut Vec<Row>, l: &Layer, g: &PropGroup, depth: usize, open: &std::collections::BTreeSet<u64>) {
     for c in &g.children {
         match c {
             // Text animators list their selectors and properties directly (as in AE).
             Node::Group(sg) if g.match_id == "animator" && matches!(sg.match_id.as_str(), "selectors" | "properties") => {
+                push_group(rows, l, sg, depth, open);
+            }
+            // A shape group's inner Contents (AE's elided `ADBE Vectors Group`): the group's items
+            // (path, fill/stroke, Transform) list directly under it, with no "Contents" row.
+            Node::Group(sg) if g.match_id == "group" && sg.match_id == "contents" => {
                 push_group(rows, l, sg, depth, open);
             }
             Node::Group(sg) => {
@@ -1451,7 +1487,7 @@ fn replaceable_item(it: &effectcraft_engine::project::Item) -> bool {
 
 /// The Alt/Option-drag target: the layer under the pointer can take this item as its source, and
 /// the item wouldn't put the composition inside itself.
-fn replace_source_target(app: &EffectcraftApp, cid: ItemId, item: ItemId, lid: LayerId, comp: &Comp) -> bool {
+pub(crate) fn replace_source_target(app: &EffectcraftApp, cid: ItemId, item: ItemId, lid: LayerId, comp: &Comp) -> bool {
     app.session.project.item(item).is_some_and(replaceable_item)
         && !app.session.project.comp_contains(item, cid)
         && comp
@@ -1968,6 +2004,19 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let rh = t.row_h;
     let total_h: f32 = rows.iter().map(|r| row_height(r, rh)).sum();
     let max_scroll = (total_h - rows_rect.height() + rh).max(0.0);
+    // An expression editor asked to take the keyboard comes into view; a request whose
+    // expression didn't appear, or that wasn't taken within a few passes, is dropped (it never
+    // takes the keyboard later).
+    if let Some(f) = ctx.data(|d| d.get_temp::<ExprFocus>(expr_focus_id())) {
+        match rows.iter().position(|r| matches!(r.kind, RowKind::Expr { uid, .. } if uid == f.prop)) {
+            Some(i) if ctx.cumulative_pass_nr() <= f.pass.saturating_add(8) => {
+                let top: f32 = rows.iter().take(i).map(|r| row_height(r, rh)).sum();
+                let fits = (top + rows.get(i).map_or(rh, |r| row_height(r, rh)) - rows_rect.height()).max(0.0).min(top);
+                app.ui.timeline.scroll_y = app.ui.timeline.scroll_y.min(top).max(fits);
+            }
+            _ => ctx.data_mut(|d| d.remove::<ExprFocus>(expr_focus_id())),
+        }
+    }
     if scroll_to == Some(crate::state::ScrollTo::Layer) {
         // The topmost selected layer, in stack order.
         let sel = &app.session.state.selected_layers;
@@ -2781,12 +2830,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 gp.rect_filled(Rect::from_min_max(pos2(graph_x0, r.min.y), r.max), 0.0, t.expr_bg);
                 let er = Rect::from_min_max(pos2(graph_x0 + 8.0, r.min.y + 3.0), pos2(rect.max.x - 14.0, r.max.y - 3.0));
                 let mut buf: String = ctx.data(|d| d.get_temp(buf_id)).unwrap_or_else(|| ex.text.clone());
-                if let Some(after) = ctx.data_mut(|d| d.remove_temp::<usize>(expr_refocus_id(*uid))) {
-                    // A pick whip just put a reference in: editing goes on in the new text,
-                    // the cursor after the reference.
+                if let Some(f) = ctx.data(|d| d.get_temp::<ExprFocus>(expr_focus_id())).filter(|f| f.prop == *uid) {
+                    // Asked for once (a pick whip put a reference in, or an Alt-click added the
+                    // expression): editing starts in the expression as it is now.
+                    ctx.data_mut(|d| d.remove::<ExprFocus>(expr_focus_id()));
                     buf = ex.text.clone();
+                    let n = buf.chars().count();
+                    let [a, b] = f.select.map(|before_end| egui::text::CCursor::new(n.saturating_sub(before_end)));
                     let mut st = egui::text_edit::TextEditState::load(&ctx, edit_id).unwrap_or_default();
-                    st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(buf.chars().count().saturating_sub(after)))));
+                    st.cursor.set_char_range(Some(egui::text::CCursorRange::two(a, b)));
                     st.store(&ctx, edit_id);
                     ctx.memory_mut(|m| m.request_focus(edit_id));
                 }
@@ -2884,6 +2936,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     if ui.input(|i| i.modifiers.alt) {
                         if resp.clicked() {
                             actions.push(("prop.setExpression".into(), json!({"layer": layer.id.0, "prop": uid})));
+                            if prop.expr.is_none() {
+                                // Adding one: its editor opens, comes into view and takes the
+                                // keyboard with the new expression selected (#1072).
+                                app.ui.timeline.expr_closed.remove(uid);
+                                focus_expression(&ctx, *uid, [usize::MAX, 0]);
+                            } else if ctx.data(|d| d.get_temp::<ExprFocus>(expr_focus_id())).is_some_and(|f| f.prop == *uid) {
+                                // Removing it: nothing is left to take the keyboard.
+                                ctx.data_mut(|d| d.remove::<ExprFocus>(expr_focus_id()));
+                            }
                         }
                     } else if let Some((value, merge)) = switch_gesture(ui, &resp, r, "stopwatch", prop.is_animated()) {
                         actions.push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid, "value": value, "merge": merge})));
@@ -3208,7 +3269,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         params["expression"] = json!(text);
                         params["range"] = json!([a, b]);
                         let after = text.chars().count().saturating_sub(b);
-                        ctx.data_mut(|d| d.insert_temp(expr_refocus_id(src_prop), after));
+                        focus_expression(&ctx, src_prop, [after, after]);
                     }
                     actions.push(("prop.pickWhip".into(), params));
                 }
@@ -4273,7 +4334,7 @@ fn value_editor(
     match value {
         Value::Scalar(v) => {
             let (min, max, dec, speed) = match &prop.ui {
-                ParamUi::Slider { min, max, decimals, .. } => (*min, *max, *decimals as usize, ((max - min) / 400.0).clamp(0.01, 10.0)),
+                ParamUi::Slider { min, max, decimals, .. } => (*min, *max, *decimals as usize, widgets::slider_scrub_speed(&prop.ui)),
                 ParamUi::Percent => (-1e6, 1e6, 1, 0.5),
                 _ => (-1e9, 1e9, 1, 1.0),
             };
@@ -4403,13 +4464,16 @@ fn value_editor(
         }
         Value::Text(_) => {}
         Value::Layer(l) => {
-            p.text(
-                pos2(x, at.y),
-                Align2::LEFT_CENTER,
-                l.map(|l| crate::i18n::tr_args("Layer {}", &[&l])).unwrap_or(crate::i18n::tr("None").into()),
-                Tokens::ui(12.0),
-                t.hot_text,
-            );
+            // Layer references (a light's Source, a Displacement Map's layer…) pick from the
+            // comp's layers, as in Effect Controls; the choice is written through the same
+            // undoable prop.set as the other value arms.
+            let r = Rect::from_min_size(pos2(x, at.y - 9.0), vec2(150.0, 18.0));
+            if let Some(comp) = app.session.active_comp_arc()
+                && let Some(chosen) = widgets::layer_picker(ui, r, &comp.layers, *l, &t, egui::Id::new(("tl-lay", uid)))
+            {
+                set(actions, chosen.map(|id| json!(id)).unwrap_or(serde_json::Value::Null));
+            }
+            app.auto.add(&format!("timeline.prop.{uid}.value"), r, &prop.name);
         }
         Value::Gradient(_) => {
             // Opens the Gradient Editor at the current time (#612).
@@ -4607,6 +4671,46 @@ mod tests {
         let ctx = egui::Context::default();
         crate::menus::invoke(&mut app, &ctx, "timeline.search", json!({"query": "scale"})).unwrap();
         assert!(labels(&app).iter().any(|r| r.trim() == "Scale"));
+    }
+
+    /// A shape group's inner Contents (AE's elided `ADBE Vectors Group`) draws no row: the
+    /// search shows the full row hierarchy with the group's items — path, fill and Transform —
+    /// listing directly under the group, and the only "Contents" row the layer's own.
+    #[test]
+    fn shape_group_inner_contents_is_elided() {
+        let mut s = effectcraft_engine::Session::default();
+        s.execute("comp.new", json!({"name": "T", "width": 320, "height": 180, "duration": 4})).unwrap();
+        s.execute("layer.newShape", json!({"kind": "rect"})).unwrap();
+        let mut app = EffectcraftApp::new(s);
+        app.ui.timeline.search = "rect".into();
+        assert_eq!(
+            labels(&app),
+            [
+                "Shape Layer 1",
+                "  >Contents",
+                "    >Rectangle 1",
+                "      >Rectangle Path 1",
+                "        Size",
+                "        Position",
+                "        Roundness",
+                "      >Fill 1",
+                "        Composite",
+                "        Fill Rule",
+                "        Color",
+                "        Opacity",
+                "      >Transform",
+                "        Anchor Point",
+                "        Position",
+                "        Scale",
+                "        Skew",
+                "        Skew Axis",
+                "        Rotation",
+                "        Opacity",
+            ]
+            .iter()
+            .map(|r| r.to_string())
+            .collect::<Vec<_>>()
+        );
     }
 
     #[test]

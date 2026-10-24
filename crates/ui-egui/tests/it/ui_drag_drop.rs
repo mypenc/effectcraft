@@ -124,6 +124,22 @@ fn alt_dragging_a_project_item_replaces_the_layer_source() {
     assert_eq!(layer.name, "Top", "the layer keeps its name");
 }
 
+/// Alt/Option-dropping a Project item on the Composition viewer replaces the source of the layer
+/// under the pointer, as in the Timeline, instead of adding a layer (#2173).
+#[test]
+fn alt_dropping_a_project_item_on_the_viewer_replaces_the_layer_source() {
+    let (mut h, clip) = harness();
+    let item = rect(&h, &format!("project.item.{clip}.name")).center();
+    let to = comp_to_screen(&h.ctx, [160.0, 90.0]).unwrap();
+    let before = stack(&h);
+    drag(&mut h, item, to, Modifiers::ALT);
+    assert_eq!(stack(&h), before, "no layer is added");
+    let comp = h.state().session.active_comp().unwrap();
+    let replaced =
+        comp.layers.iter().filter(|l| l.source == effectcraft_engine::project::LayerSource::Comp { item: effectcraft_engine::project::ItemId(clip) }).count();
+    assert_eq!(replaced, 1, "only the layer under the pointer takes the new source");
+}
+
 /// Ctrl+Alt+/ (Cmd+Opt+/ on macOS) replaces every selected layer's source with the Project panel
 /// selection (#991).
 #[test]

@@ -759,6 +759,74 @@ fn path_editing_hides_layer_bounds_and_keeps_corner_vertices_editable() {
     }
 }
 
+/// #1769: the eye hides a layer's pixels, not the controls of a selected AV layer: a hidden shape
+/// layer keeps its transform box, anchor and shape path, and its handles still scale it.
+#[test]
+fn hidden_shape_layer_keeps_its_controls_and_can_still_scale() {
+    let mut h = harness();
+    let (layer, path) = {
+        let r = h
+            .state_mut()
+            .session
+            .execute(
+                "shape.newPath",
+                json!({
+                    "vertices": [[200.0, 100.0], [400.0, 100.0], [400.0, 260.0], [200.0, 260.0]],
+                    "closed": true,
+                    "fill": false,
+                    "stroke": "#ffffff",
+                    "strokeWidth": 4
+                }),
+            )
+            .unwrap();
+        (r["layer"].as_u64().unwrap(), r["path"].as_u64().unwrap())
+    };
+    h.state_mut().session.execute("layer.select", json!({"layers": [layer]})).unwrap();
+    h.state_mut().session.state.selected_vertices.clear();
+    h.state_mut().session.execute("layer.setSwitch", json!({"layers": [layer], "switch": "video", "value": false})).unwrap();
+    h.run_steps(2);
+    let shown = h.state().session.active_comp().unwrap().layer(LayerId(layer)).unwrap().clone();
+    assert!(!shown.switches.video);
+    assert!(shown.source.is_av());
+    assert_eq!(h.state().session.state.selected_layers, vec![LayerId(layer)]);
+    assert!(h.state().auto.find(&format!("viewer.handle.{layer}.0")).is_some(), "a hidden shape keeps its transform box");
+    assert!(h.state().auto.find(&format!("viewer.anchor.{layer}")).is_some(), "and its anchor");
+    assert!(h.state().auto.find(&format!("viewer.shapePath.{path}.vertex.0")).is_some(), "and its shape path");
+    let scale = |h: &Harness<'_, EffectcraftApp>| {
+        h.state().session.active_comp().unwrap().layer(LayerId(layer)).unwrap().props.prop("transform/scale").unwrap().value.as_vec3()
+    };
+    let before = scale(&h);
+    let from = rect(&h, &format!("viewer.handle.{layer}.5")).center();
+    drag(&mut h, from, from + vec2(24.0, 0.0));
+    assert_ne!(scale(&h), before, "a hidden layer's handle still scales it");
+}
+
+/// #1769: a hidden masked layer keeps its mask path and vertices, and they remain editable.
+#[test]
+fn hidden_masked_layer_keeps_its_mask_path_editable() {
+    let mut h = harness();
+    let plate = layer_id(&h, "Plate");
+    let corners = [[100.0, 60.0], [500.0, 60.0], [500.0, 300.0], [100.0, 300.0]];
+    let mask = {
+        let s = &mut h.state_mut().session;
+        s.execute("layer.select", json!({"layers": [plate]})).unwrap();
+        let m = s.execute("mask.new", json!({"layer": plate, "vertices": corners, "closed": true})).unwrap()["mask"].as_u64().unwrap();
+        s.state.selected_vertices.clear();
+        s.execute("layer.setSwitch", json!({"layers": [plate], "switch": "video", "value": false})).unwrap();
+        m
+    };
+    h.run_steps(2);
+    assert!(h.state().auto.find(&format!("viewer.handle.{plate}.0")).is_some(), "a hidden masked layer keeps its transform box");
+    let vertex = format!("viewer.mask.{mask}.vertex.0");
+    assert!(h.state().auto.find(&vertex).is_some(), "and its mask path");
+    let before = mask_path(&h, "Plate");
+    let from = rect(&h, &vertex).center();
+    drag(&mut h, from, from + vec2(15.0, 12.0));
+    let after = mask_path(&h, "Plate");
+    assert_ne!(after.vertices[0], before.vertices[0], "the hidden layer's mask vertex can still be moved");
+    assert_eq!(after.vertices[1..], before.vertices[1..]);
+}
+
 #[test]
 fn path_tools_keep_bounds_on_layers_without_visible_paths() {
     let mut h = harness();

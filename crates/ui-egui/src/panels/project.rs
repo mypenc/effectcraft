@@ -908,6 +908,20 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 ctx.data_mut(|d| d.insert_temp::<Editing>(edit_id(), (id.0, "name".into(), it.name.clone())));
                 ui.close();
             }
+            let duplicate_items = targets(app, *id, selected);
+            // Like Edit > Duplicate: folders disable the whole operation, including mixed selections.
+            let can_duplicate =
+                !duplicate_items.is_empty() && duplicate_items.iter().all(|id| app.session.project.item(ItemId(*id)).is_some_and(|i| !i.is_folder()));
+            let mut duplicate = egui::Button::new(crate::i18n::tr("Duplicate"));
+            if let Some(shortcut) = app.session.shortcuts().shortcut_of("edit.duplicate", &serde_json::Value::Null) {
+                duplicate = duplicate.shortcut_text(crate::menus::shortcut_text(shortcut));
+            }
+            let response = ui.add_enabled(can_duplicate, duplicate);
+            app.auto.add("project.context.duplicate", response.rect, "Duplicate");
+            if response.clicked() {
+                actions.push(("project.duplicate".into(), json!({"items": duplicate_items})));
+                ui.close();
+            }
             if it.parent.is_some() && ui.button(crate::i18n::tr("Move to Project Root")).clicked() {
                 actions.push(("project.move".into(), json!({"items": targets(app, *id, selected), "folder": null})));
                 ui.close();

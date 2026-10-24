@@ -166,12 +166,13 @@ pub fn encode_thumb(img: &egui::ColorImage) -> String {
     out
 }
 
+/// Decode a stored hex thumbnail, rejecting malformed or non-ASCII text.
 pub fn decode_thumb(text: &str) -> Option<egui::ColorImage> {
     let t = text.trim();
-    if t.len() != THUMB_W * THUMB_H * 6 {
+    if t.len() != THUMB_W * THUMB_H * 6 || !t.is_ascii() {
         return None;
     }
-    let b: Vec<u8> = (0..t.len()).step_by(2).map(|i| u8::from_str_radix(&t[i..i + 2], 16)).collect::<Result<_, _>>().ok()?;
+    let b: Vec<u8> = (0..t.len()).step_by(2).map(|i| u8::from_str_radix(t.get(i..i + 2)?, 16).ok()).collect::<Option<_>>()?;
     let px = b.as_chunks::<3>().0.iter().map(|c| Color32::from_rgb(c[0], c[1], c[2])).collect();
     Some(egui::ColorImage::new([THUMB_W, THUMB_H], px))
 }
@@ -495,6 +496,12 @@ fn run_actions(app: &mut EffectcraftApp, ctx: &egui::Context, actions: Vec<(&str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn non_ascii_thumbnail_is_rejected_without_panicking() {
+        let malformed = format!("aé{}", "0".repeat(THUMB_W * THUMB_H * 6 - 3));
+        assert!(decode_thumb(&malformed).is_none());
+    }
 
     #[test]
     fn recent_list_comes_from_settings() {

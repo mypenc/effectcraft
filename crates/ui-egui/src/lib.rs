@@ -1792,7 +1792,11 @@ impl EffectcraftApp {
         if self.session.script_ui.task_hosts.is_empty() {
             return;
         }
+        let previous_comp = self.session.active_comp_id();
         let Some(r) = effectcraft_engine::scriptui::ScriptUi::run_tasks(&mut self.session) else { return };
+        if self.session.active_comp_id().is_some() && self.session.active_comp_id() != previous_comp {
+            self.ui.start_screen = false;
+        }
         if let Some(msg) = r["errors"].as_array().and_then(|e| e.first()).and_then(|e| e["message"].as_str()) {
             self.toast = Some((format!("Scheduled script task: {msg}"), ctx.input(|i| i.time)));
         } else if let Some(line) = r["output"].as_array().and_then(|o| o.last()).and_then(|l| l.as_str()) {

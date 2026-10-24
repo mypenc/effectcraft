@@ -1515,8 +1515,11 @@ function AVItem() {}
 AVItem.prototype = Object.create(Item.prototype);
 (function () {
   function def(name, get, set) { Object.defineProperty(AVItem.prototype, name, { get: get, set: set }); }
-  def("width", function () { return this.__info().width; }, function (v) { this.__settings({ width: Math.round(__num(v, "width")) }); });
-  def("height", function () { return this.__info().height; }, function (v) { this.__settings({ height: Math.round(__num(v, "height")) }); });
+  // `anchor: 0` (top left): After Effects' width and height setters resize the frame and leave the
+  // layers at their coordinates. Re-anchoring the old frame in the new one belongs to the
+  // Composition Settings dialog, which is what `comp.settings` defaults to (#1942).
+  def("width", function () { return this.__info().width; }, function (v) { this.__settings({ width: Math.round(__num(v, "width")), anchor: 0 }); });
+  def("height", function () { return this.__info().height; }, function (v) { this.__settings({ height: Math.round(__num(v, "height")), anchor: 0 }); });
   def("pixelAspect", function () { return this.__info().pixelAspect; }, function (v) { this.__settings({ pixelAspect: __num(v) }); });
   def("duration", function () { return this.__info().duration; }, function (v) { this.__settings({ duration: __num(v, "duration") }); });
   def("frameRate", function () { return this.__info().frameRate; }, function (v) { this.__settings({ frameRate: __num(v, "frameRate") }); });

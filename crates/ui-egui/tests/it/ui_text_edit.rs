@@ -16,6 +16,11 @@ fn app() -> EffectcraftApp {
     EffectcraftApp::new(s)
 }
 
+/// A headless window at the size and frame step the viewer tests here are written for.
+fn harness(a: EffectcraftApp) -> Harness<'static, EffectcraftApp> {
+    Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| a)
+}
+
 fn rect(h: &Harness<'_, EffectcraftApp>, id: &str) -> egui::Rect {
     let e = h.state().auto.find(id).unwrap_or_else(|| panic!("no {id}"));
     egui::Rect::from_min_size(egui::pos2(e.rect[0], e.rect[1]), egui::vec2(e.rect[2], e.rect[3]))
@@ -103,7 +108,7 @@ fn modal_blocks_background_text_events() {
 
 #[test]
 fn type_tool_click_type_edit_and_commit() {
-    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(|_| app());
+    let mut h = harness(app());
     h.state_mut().show_panel(PanelKind::Composition);
     h.run_steps(3);
     h.state_mut().ui.tool = effectcraft_ui_egui::state::Tool::Type;
@@ -172,7 +177,7 @@ fn clicking_another_panel_stops_typing_into_text() {
         let solid = s.execute("layer.newSolid", json!({"name": "Plate", "color": "#406080"})).unwrap()["layer"].as_u64().unwrap();
         let title =
             s.execute("layer.newText", json!({"text": "Title", "size": 80, "position": [100, 120], "justify": "left"})).unwrap()["layer"].as_u64().unwrap();
-        let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| EffectcraftApp::new(s));
+        let mut h = harness(EffectcraftApp::new(s));
         h.state_mut().show_panel(PanelKind::Composition);
         h.run_steps(3);
         let layers = |h: &Harness<'_, EffectcraftApp>| h.state().session.active_comp().unwrap().layers.len();
@@ -231,7 +236,7 @@ fn opening_a_formatting_tab_keeps_the_text_selection() {
     s.execute("comp.new", json!({"name": "Type", "width": 640, "height": 360, "duration": 2})).unwrap();
     let lid =
         s.execute("layer.newText", json!({"text": "Hello world", "size": 80, "position": [60, 200], "justify": "left"})).unwrap()["layer"].as_u64().unwrap();
-    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| EffectcraftApp::new(s));
+    let mut h = harness(EffectcraftApp::new(s));
     h.run_steps(3);
     let ctx = h.ctx.clone();
     // Effects & Presets shown, Properties, Character and Paragraph behind it.
@@ -261,7 +266,7 @@ fn keys_after_a_click_away_in_the_same_frame_skip_the_text() {
     s.execute("comp.new", json!({"name": "Type", "width": 640, "height": 360, "duration": 2})).unwrap();
     let solid = s.execute("layer.newSolid", json!({"name": "Plate", "color": "#406080"})).unwrap()["layer"].as_u64().unwrap();
     let lid = s.execute("layer.newText", json!({"text": "Hello", "size": 80, "position": [60, 200], "justify": "left"})).unwrap()["layer"].as_u64().unwrap();
-    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| EffectcraftApp::new(s));
+    let mut h = harness(EffectcraftApp::new(s));
     h.state_mut().show_panel(PanelKind::Composition);
     h.run_steps(3);
     h.state_mut().session.execute("text.edit", json!({"layer": lid, "caret": 5})).unwrap();
@@ -293,7 +298,7 @@ fn keys_after_a_click_away_in_the_same_frame_skip_the_text() {
 
 #[test]
 fn switching_from_type_to_selection_commits_and_moves_text_layer() {
-    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(|_| app());
+    let mut h = harness(app());
     h.state_mut().show_panel(PanelKind::Composition);
     h.run_steps(3);
     h.state_mut().ui.tool = effectcraft_ui_egui::state::Tool::Type;
@@ -327,7 +332,7 @@ fn double_click_enters_editing_and_selects_words() {
     s.execute("comp.new", json!({"name": "Type", "width": 640, "height": 360, "duration": 2})).unwrap();
     let lid =
         s.execute("layer.newText", json!({"text": "alpha beta", "size": 80, "position": [100, 200], "justify": "left"})).unwrap()["layer"].as_u64().unwrap();
-    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| EffectcraftApp::new(s));
+    let mut h = harness(EffectcraftApp::new(s));
     h.state_mut().show_panel(PanelKind::Composition);
     h.run_steps(3);
     // A point inside "beta" (comp space → window).
@@ -368,7 +373,7 @@ fn double_click_enters_editing_and_selects_words() {
 
 #[test]
 fn type_tool_drag_makes_paragraph_text_with_box_handles() {
-    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(|_| app());
+    let mut h = harness(app());
     h.state_mut().show_panel(PanelKind::Composition);
     h.run_steps(3);
     h.state_mut().ui.tool = effectcraft_ui_egui::state::Tool::Type;
@@ -418,7 +423,7 @@ fn layer_new_text_menu_and_shortcut_start_typing_into_source_text() {
         let mut s = Session::default();
         s.execute("comp.new", json!({"name": "Type", "width": 640, "height": 360, "duration": 2})).unwrap();
         s.execute("layer.newSolid", json!({"color": "#ffffff"})).unwrap();
-        let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| EffectcraftApp::new(s));
+        let mut h = harness(EffectcraftApp::new(s));
         h.state_mut().show_panel(PanelKind::Composition);
         h.run_steps(3);
         if via_shortcut {
@@ -447,7 +452,7 @@ fn timeline_double_click_on_a_text_layer_edits_its_text() {
         let mut s = Session::default();
         s.execute("comp.new", json!({"name": "Type", "width": 640, "height": 360, "duration": 2})).unwrap();
         let lid = s.execute("layer.newText", json!({"text": "alpha beta"})).unwrap()["layer"].as_u64().unwrap();
-        let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| EffectcraftApp::new(s));
+        let mut h = harness(EffectcraftApp::new(s));
         h.state_mut().show_panel(PanelKind::Composition);
         h.run_steps(3);
         let p = rect(&h, &format!("timeline.layer.{lid}.{target}")).center();
@@ -474,7 +479,7 @@ fn duplicated_text_boxes_both_remain_editable() {
         .unwrap()["layer"]
         .as_u64()
         .unwrap();
-    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| a);
+    let mut h = harness(a);
     h.run_steps(3);
     h.state_mut().ui.focused = PanelKind::Composition;
     key(&mut h, Key::D, Modifiers::COMMAND);
@@ -500,7 +505,7 @@ fn duplicated_text_boxes_both_remain_editable() {
 fn overlapping_duplicate_text_remains_editable_by_double_click_and_selected_type_tool() {
     let mut a = app();
     let original = a.session.execute("layer.newText", json!({"text": "alpha beta", "size": 40, "box": [40, 60, 250, 100]})).unwrap()["layer"].as_u64().unwrap();
-    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| a);
+    let mut h = harness(a);
     h.run_steps(3);
     h.state_mut().ui.focused = PanelKind::Composition;
     key(&mut h, Key::D, Modifiers::COMMAND);
@@ -562,11 +567,160 @@ fn type_tool_selected_text_preference_skips_ineligible_layers_and_falls_back_to_
         }
         a.session.state.selected_layers = if exclusion == "unselected" { vec![] } else { vec![LayerId(original)] };
         a.ui.tool = effectcraft_ui_egui::state::Tool::Type;
-        let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| a);
+        let mut h = harness(a);
         h.run_steps(3);
         let comp = rect(&h, "viewer.comp");
         let p = comp.min + egui::vec2(80.0, 85.0) * (comp.width() / 640.0);
         click(&mut h, p, Modifiers::NONE);
         assert_eq!(edited(&h).0, topmost, "{exclusion} selected text must not override the eligible hit");
     }
+}
+
+/// Opens a fresh Type-tool edit holding `text` and returns the harness with the new layer id,
+/// so the Deselect All tests start from the same state.
+fn type_tool_edit(a: EffectcraftApp, text: &str) -> (Harness<'static, EffectcraftApp>, u64) {
+    let mut h = harness(a);
+    h.run_steps(3);
+    h.state_mut().ui.tool = effectcraft_ui_egui::state::Tool::Type;
+    h.run_steps(1);
+    let comp = rect(&h, "viewer.comp");
+    let p = comp.min + egui::vec2(180.0, 160.0) * (comp.width() / 640.0);
+    click(&mut h, p, Modifiers::NONE);
+    type_text(&mut h, text);
+    let (lid, _, _, _) = edited(&h);
+    (h, lid)
+}
+
+#[test]
+fn deselect_all_chords_end_a_type_tool_edit() {
+    for (name, k, mods) in [("Cmd/Ctrl+Shift+A", Key::A, Modifiers { shift: true, ..Modifiers::COMMAND }), ("F2", Key::F2, Modifiers::NONE)] {
+        let (mut h, lid) = type_tool_edit(app(), "Hello");
+        let (_, text, _, _) = edited(&h);
+        assert_eq!(text, "Hello", "{name}: the Type tool click and typing made a layer");
+        key(&mut h, k, mods);
+        assert!(h.state().session.state.text_edit.is_none(), "{name}: Deselect All ends the edit");
+        assert!(h.state().session.state.selected_layers.is_empty(), "{name}: and deselects the layer");
+        assert_eq!(layer_doc(&h.state().session, LayerId(lid)).unwrap().text, "Hello", "{name}: the typed text is kept");
+    }
+}
+
+#[test]
+fn cmd_a_in_a_text_edit_still_selects_all_characters() {
+    let (mut h, _lid) = type_tool_edit(app(), "Hello");
+    key(&mut h, Key::A, Modifiers::COMMAND);
+    let (_, _, a, c) = edited(&h);
+    assert_eq!((a, c), (0, 5), "Select All keeps selecting every character");
+    assert!(h.state().session.state.text_edit.is_some(), "the edit stays open");
+    assert_eq!(h.state().session.state.selected_layers.len(), 1, "and the layer stays selected");
+}
+
+#[test]
+fn rebound_deselect_all_chord_forwards_from_inside_the_edit() {
+    let mut a = app();
+    a.session.execute("shortcuts.set", json!({"command": "edit.deselectAll", "keys": ["Cmd+Alt+D"]})).unwrap();
+    let (mut h, lid) = type_tool_edit(a, "Hello");
+    // The chord belongs to the shortcut, not to a hard-coded key: the old defaults do
+    // nothing special while the editor holds the keyboard…
+    key(&mut h, Key::A, Modifiers { shift: true, ..Modifiers::COMMAND });
+    assert!(h.state().session.state.text_edit.is_some(), "Cmd+Shift+A was rebound away");
+    let (_, _, a, c) = edited(&h);
+    assert_eq!((a, c), (5, 5), "and Cmd+Shift+A no longer selects all characters either");
+    key(&mut h, Key::F2, Modifiers::NONE);
+    assert!(h.state().session.state.text_edit.is_some(), "nor does F2");
+    // …and the current binding is what ends the edit.
+    key(&mut h, Key::D, Modifiers { alt: true, ..Modifiers::COMMAND });
+    assert!(h.state().session.state.text_edit.is_none(), "the rebound chord ends the edit");
+    assert!(h.state().session.state.selected_layers.is_empty(), "and deselects");
+    assert_eq!(layer_doc(&h.state().session, LayerId(lid)).unwrap().text, "Hello", "the text is kept");
+}
+
+#[test]
+fn deselect_all_rebound_onto_an_alt_variant_of_an_editor_chord_forwards() {
+    let alt_cmd = |k| (k, Modifiers { alt: true, ..Modifiers::COMMAND });
+    for (bound, (k, mods)) in [("Cmd+Alt+Z", alt_cmd(Key::Z)), ("Cmd+Alt+A", alt_cmd(Key::A))] {
+        let mut a = app();
+        a.session.execute("shortcuts.set", json!({"command": "edit.deselectAll", "keys": [bound]})).unwrap();
+        let (mut h, lid) = type_tool_edit(a, "Hello");
+        // The editor owns Cmd+A and Cmd+Z themselves, whatever Deselect All is bound to…
+        key(&mut h, Key::A, Modifiers::COMMAND);
+        let (_, _, a0, c0) = edited(&h);
+        assert_eq!((a0, c0), (0, 5), "{bound}: Cmd+A still selects every character");
+        type_text(&mut h, "Hi");
+        key(&mut h, Key::Z, Modifiers::COMMAND);
+        assert_eq!(edited(&h).1, "Hello", "{bound}: Cmd+Z still undoes the typing");
+        // …but not their Alt variants, which belong to the rebound Deselect All.
+        key(&mut h, k, mods);
+        assert!(h.state().session.state.text_edit.is_none(), "{bound}: the rebound chord ends the edit");
+        assert!(h.state().session.state.selected_layers.is_empty(), "{bound}: and deselects");
+        assert_eq!(layer_doc(&h.state().session, LayerId(lid)).unwrap().text, "Hello", "{bound}: without undoing or selecting text");
+    }
+}
+
+#[test]
+fn bare_letter_rebinding_stays_typing_but_a_function_key_rebinding_forwards() {
+    let mut a = app();
+    a.session.execute("shortcuts.set", json!({"command": "edit.deselectAll", "keys": ["A"]})).unwrap();
+    let (mut h, lid) = type_tool_edit(a, "Hello");
+    // A binding without a command modifier is text as far as the editor is concerned: the
+    // keystroke belongs to the text, since a command may not steal a key that types
+    // (the app-wide dispatcher honors the same invariant by skipping focused text fields).
+    key(&mut h, Key::A, Modifiers::NONE);
+    assert!(h.state().session.state.text_edit.is_some(), "a bare-letter Deselect All binding does not end the edit");
+    type_text(&mut h, "a");
+    let (lid2, _, a0, c0) = edited(&h);
+    assert_eq!(lid2, lid, "the same edit on the same layer continues");
+    assert_eq!((a0, c0), (6, 6), "the letter typed at the caret");
+    assert_eq!(layer_doc(&h.state().session, LayerId(lid)).unwrap().text, "Helloa", "and landed in the text");
+    // A function key types nothing, so a modifier-free function-key binding is forwarded
+    // (the default F2 relies on this).
+    h.state_mut().session.execute("shortcuts.set", json!({"command": "edit.deselectAll", "keys": ["F7"]})).unwrap();
+    key(&mut h, Key::F7, Modifiers::NONE);
+    assert!(h.state().session.state.text_edit.is_none(), "a bare function-key binding ends the edit");
+    assert!(h.state().session.state.selected_layers.is_empty(), "and deselects");
+    assert_eq!(layer_doc(&h.state().session, LayerId(lid)).unwrap().text, "Helloa", "the text is kept");
+}
+
+/// Opens a text edit the way a user does from the Project panel — Layer ▸ New ▸ Text's shortcut
+/// while that panel is focused — so the insertion point lives in the comp while focus stays on
+/// Project. Returns the harness and the new layer id.
+fn project_focused_text_edit(text: &str) -> (Harness<'static, EffectcraftApp>, u64) {
+    let mut h = harness(app());
+    h.run_steps(3);
+    h.state_mut().ui.focused = PanelKind::Project;
+    h.run_steps(1);
+    key(&mut h, Key::T, Modifiers { alt: true, shift: true, ..Modifiers::COMMAND });
+    type_text(&mut h, text);
+    let (lid, typed, _, _) = edited(&h);
+    assert_eq!(typed, text, "typing went into the new layer");
+    assert_eq!(h.state().ui.focused, PanelKind::Project, "the Project panel is still the focused panel");
+    (h, lid)
+}
+
+#[test]
+fn deselect_all_chords_end_an_edit_started_while_the_project_panel_is_focused() {
+    for (name, k, mods) in [("Cmd/Ctrl+Shift+A", Key::A, Modifiers { shift: true, ..Modifiers::COMMAND }), ("F2", Key::F2, Modifiers::NONE)] {
+        let (mut h, lid) = project_focused_text_edit("Hi");
+        key(&mut h, k, mods);
+        assert!(h.state().session.state.text_edit.is_none(), "{name}: Deselect All ends the edit");
+        assert!(h.state().session.state.selected_layers.is_empty(), "{name}: and deselects the layer");
+        assert_eq!(layer_doc(&h.state().session, LayerId(lid)).unwrap().text, "Hi", "{name}: the typed text is kept");
+    }
+}
+
+#[test]
+fn deselect_all_menu_item_follows_the_edit_while_the_project_panel_is_focused() {
+    let enabled = |h: &Harness<'_, EffectcraftApp>| {
+        effectcraft_ui_egui::menus::menu_items(h.state()).into_iter().find(|m| m.id == "edit.deselectAll").is_some_and(|m| m.enabled)
+    };
+    let (mut h, _) = project_focused_text_edit("Hi");
+    h.state_mut().session.execute("project.select", json!({"items": []})).unwrap();
+    h.run_steps(1);
+    assert!(h.state().session.state.text_edit.is_some(), "the edit is still open");
+    // The item ends the edit, so an empty Project selection must not gray it out.
+    assert!(enabled(&h), "Deselect All is enabled during the edit");
+    key(&mut h, Key::Escape, Modifiers::NONE);
+    assert!(h.state().session.state.text_edit.is_none(), "Escape ended the edit");
+    assert_eq!(h.state().ui.focused, PanelKind::Project, "the Project panel is still the focused panel");
+    // With no edit, the item deselects Project items again: nothing selected there, nothing to do.
+    assert!(!enabled(&h), "Deselect All follows the empty Project selection once the edit is over");
 }

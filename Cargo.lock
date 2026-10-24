@@ -985,7 +985,7 @@ source = "git+https://github.com/storytold/craft-libs?rev=82a24b006eefa036b43c09
 [[package]]
 name = "craft-pdf"
 version = "0.1.0"
-source = "git+https://github.com/storytold/craft-libs?rev=ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d#ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d"
+source = "git+https://github.com/storytold/craft-libs?rev=9f75d3dc19b4b514c4f3d4847ed1ec1b0e86b4ef#9f75d3dc19b4b514c4f3d4847ed1ec1b0e86b4ef"
 dependencies = [
  "hayro-syntax",
  "thiserror 2.0.21",
@@ -1602,6 +1602,7 @@ dependencies = [
  "effectcraft-render",
  "effectcraft-time",
  "serde_json",
+ "socket2",
  "web-time",
 ]
 
@@ -2725,8 +2726,7 @@ checksum = "9f4d0e94ddd48749f06bbe4e5389fb9799a0c45bcaf00495042076ef05e3241a"
 [[package]]
 name = "hayro-jbig2"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69374b3668dd45aeb3d3145cda68f2c7b4f223aaa2511e67d076f1c7d741388d"
+source = "git+https://github.com/storytold/craft-libs?rev=9f75d3dc19b4b514c4f3d4847ed1ec1b0e86b4ef#9f75d3dc19b4b514c4f3d4847ed1ec1b0e86b4ef"
 dependencies = [
  "hayro-ccitt",
 ]
@@ -2740,7 +2740,7 @@ checksum = "c75ab947623ef4ccaa7acf0579edf7cbb5a73838e3839a7be73335e522f433a1"
 [[package]]
 name = "hayro-syntax"
 version = "0.7.2"
-source = "git+https://github.com/storytold/craft-libs?rev=ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d#ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d"
+source = "git+https://github.com/storytold/craft-libs?rev=9f75d3dc19b4b514c4f3d4847ed1ec1b0e86b4ef#9f75d3dc19b4b514c4f3d4847ed1ec1b0e86b4ef"
 dependencies = [
  "hayro-jbig2",
  "hayro-jpeg2000",
@@ -4825,6 +4825,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "socket2"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

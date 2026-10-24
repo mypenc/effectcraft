@@ -271,3 +271,18 @@ fn click_at(h: &mut Harness<'_, EffectcraftApp>, c: egui::Pos2) {
     }
     h.run_steps(3);
 }
+#[test]
+fn scheduled_import_reveals_its_composition_without_manual_clicks() {
+    let mut s = effectcraft_host::session();
+    let result = s.execute("script.run", json!({"code": "var w=new Window('palette','Automatic import');var b=w.add('button',undefined,'Open');b.onClick=function(){app.scheduleTask(\"var c=app.project.items.addComp('Imported',64,64,1,1,25);c.openInViewer();\",0,false);};w.show();"})).unwrap();
+    assert_eq!(result["ok"], true, "{result}");
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.state_mut().ui.start_screen = true;
+    h.run_steps(2);
+    h.state_mut().session.execute("scriptui.click", json!({"window":"Automatic import","widget":"Open"})).unwrap();
+    h.run_steps(4);
+    let active = h.state().session.active_comp_id().unwrap();
+    assert_eq!(h.state().session.project.items.get(&active).unwrap().name, "Imported");
+    assert!(!h.state().ui.start_screen, "Home must not hide a composition opened by the scheduled import");
+    h.state_mut().session.execute("scriptui.close", json!({"window":"Automatic import"})).unwrap();
+}
