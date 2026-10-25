@@ -2388,18 +2388,43 @@ pub(crate) fn layer_at<'a>(ectx: &EvalCtx<'a>, cpt: [f64; 2]) -> Option<&'a Laye
     layers_at(ectx, cpt).next()
 }
 
+/// How close (comp px) a press has to be to a camera's or light's position to pick it.
+const RIG_PICK_PX: f64 = 12.0;
+
+/// The camera or light whose position is nearest a comp point, within [`RIG_PICK_PX`]. They
+/// are not in [`selectable_layers`] (no pixels), so a press on one picks it here.
+pub(crate) fn rig_at(ectx: &EvalCtx, cpt: [f64; 2]) -> Option<LayerId> {
+    let proj = cam_state(ectx).projection(ectx.comp.width as f64, ectx.comp.height as f64);
+    ectx.comp
+        .layers
+        .iter()
+        .filter(|l| (l.is_camera() || l.is_light()) && l.is_active_at(ectx.time) && l.switches.video && !l.switches.locked)
+        .filter_map(|l| {
+            let o = ectx.world_matrix(l).apply(effectcraft_engine::geom::vec3(0.0, 0.0, 0.0));
+            let h = |i: usize| proj.0.get(i).map_or(0.0, |r| r[0] * o.x + r[1] * o.y + r[2] * o.z + r[3]);
+            let w = h(3);
+            let (x, y) = (h(0) / w, h(1) / w);
+            let d = ((x - cpt[0]).powi(2) + (y - cpt[1]).powi(2)).sqrt();
+            (w >= NEAR_W && d.is_finite() && d <= RIG_PICK_PX).then_some((l.id, d))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(id, _)| id)
+}
+
 /// The layer a press at a comp point acts on, selected (Shift toggles the topmost layer). As in
 /// After Effects, a selected layer under the point comes before the layers in front of it, so it
 /// can be dragged where they cover it; otherwise the topmost layer (#230).
 pub(crate) fn pick(app: &mut EffectcraftApp, ectx: &EvalCtx, cpt: [f64; 2], toggle: bool) -> Option<LayerId> {
     if toggle {
-        let hit = layer_at(ectx, cpt)?.id;
+        let hit = layer_at(ectx, cpt).map(|l| l.id).or_else(|| rig_at(ectx, cpt))?;
         let _ = app.session.execute("layer.select", json!({"layers": [hit.0], "toggle": true}));
         return Some(hit);
     }
     let selected = &app.session.state.selected_layers;
     let hits: Vec<LayerId> = layers_at(ectx, cpt).map(|l| l.id).collect();
-    let hit = *hits.iter().find(|id| selected.contains(id)).or(hits.first())?;
+    // Cameras and lights have no pixels: they are picked by their position, behind any layer.
+    let rig = if hits.is_empty() { rig_at(ectx, cpt) } else { None };
+    let hit = *hits.iter().find(|id| selected.contains(id)).or(hits.first()).or(rig.as_ref())?;
     if !selected.contains(&hit) {
         let _ = app.session.execute("layer.select", json!({"layers": [hit.0]}));
     }
