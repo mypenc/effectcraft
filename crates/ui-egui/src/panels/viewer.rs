@@ -329,7 +329,11 @@ fn project_clipped(m: &Mat3, poly: &[[f64; 2]]) -> Vec<[f64; 2]> {
 }
 
 /// The segment a → b (world space) through the projection `pc`, clipped at the near plane.
-pub(super) fn project_segment(pc: &effectcraft_engine::geom::Mat4, a: effectcraft_engine::geom::Vec3, b: effectcraft_engine::geom::Vec3) -> Option<[[f64; 2]; 2]> {
+pub(super) fn project_segment(
+    pc: &effectcraft_engine::geom::Mat4,
+    a: effectcraft_engine::geom::Vec3,
+    b: effectcraft_engine::geom::Vec3,
+) -> Option<[[f64; 2]; 2]> {
     let h = |p: effectcraft_engine::geom::Vec3| {
         let r = |i: usize| pc.0.get(i).map_or(0.0, |row| row[0] * p.x + row[1] * p.y + row[2] * p.z + row[3]);
         [r(0), r(1), r(3)]

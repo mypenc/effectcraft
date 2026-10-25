@@ -127,11 +127,7 @@ fn ring_axes(ctx: &EvalCtx, l: &Layer, orientation: bool) -> Option<([Vec3; 3], 
     let pre = total * own.inverse()?;
     let (pre, a) = if orientation { (pre, o) } else { (pre * ro, r) };
     let (ez, ey, ex) = (vec3(0.0, 0.0, 1.0), vec3(0.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0));
-    let local = [
-        (pre * Mat4::rotate_z(a[2]) * Mat4::rotate_y(a[1])).apply_vec(ex),
-        (pre * Mat4::rotate_z(a[2])).apply_vec(ey),
-        pre.apply_vec(ez),
-    ];
+    let local = [(pre * Mat4::rotate_z(a[2]) * Mat4::rotate_y(a[1])).apply_vec(ex), (pre * Mat4::rotate_z(a[2])).apply_vec(ey), pre.apply_vec(ez)];
     let pw = three_d::camera::parent_world(ctx, l);
     let w = |v: Vec3| unit(pw.apply_vec(v));
     Some(([w(local[0])?, w(local[1])?, w(local[2])?], a))
@@ -205,7 +201,7 @@ pub(super) fn draw(
         draw_rings(app, painter, map, ectx, l, &cam, &proj, origin, zoom, hover, alt, hits);
     } else {
         draw_arrows(app, painter, map, ectx, l, &proj, &w, a3, zoom, axis_hits);
-        draw_planes(app, painter, map, ectx, l, &proj, &w, a3, zoom, hits);
+        draw_planes(app, painter, map, ectx, l, &proj, &w, a3, zoom, hover, hits);
     }
 }
 
@@ -260,6 +256,7 @@ fn draw_planes(
     w: &Mat4,
     a3: Vec3,
     zoom: f64,
+    hover: Option<Pos2>,
     hits: &mut Hits,
 ) {
     let len = ARROW / zoom;
@@ -270,7 +267,8 @@ fn draw_planes(
     let start_pos = ectx.v3(l, tr, "position", [0.0; 3]);
     for ([ia, ib], name, normal) in PLANES {
         let (Some(ua), Some(ub)) = (axes.get(ia).copied(), axes.get(ib).copied()) else { continue };
-        let at = |s: f64, t: f64| project(proj, vec3(o.x + ua.x * s + ub.x * t, o.y + ua.y * s + ub.y * t, o.z + ua.z * s + ub.z * t)).map(|p| map.to_screen(p));
+        let at =
+            |s: f64, t: f64| project(proj, vec3(o.x + ua.x * s + ub.x * t, o.y + ua.y * s + ub.y * t, o.z + ua.z * s + ub.z * t)).map(|p| map.to_screen(p));
         let (Some(p0), Some(p1), Some(p2), Some(p3)) = (at(0.25, 0.25), at(0.55, 0.25), at(0.55, 0.55), at(0.25, 0.55)) else { continue };
         let quad = [p0, p1, p2, p3];
         // Edge-on to the view: nothing to grab, and the sweep has no solution.
@@ -330,7 +328,9 @@ fn draw_rings(
     }
     // Rings nearest the pointer light up.
     let near = |screen: &[Option<Pos2>], p: Pos2| ring_distance(screen, p).map(|(d, _)| d);
-    let hot = hover.and_then(|h| drawn.iter().filter_map(|(i, s, ..)| near(s, h).filter(|d| *d < RING_GRAB).map(|d| (*i, d))).min_by(|a, b| a.1.total_cmp(&b.1))).map(|(i, _)| i);
+    let hot = hover
+        .and_then(|h| drawn.iter().filter_map(|(i, s, ..)| near(s, h).filter(|d| *d < RING_GRAB).map(|d| (*i, d))).min_by(|a, b| a.1.total_cmp(&b.1)))
+        .map(|(i, _)| i);
     for (axis_i, screen, comp, back) in drawn {
         let col = AXIS_COLORS.get(axis_i).copied().unwrap_or(Color32::WHITE);
         let width = if hot == Some(axis_i) { 3.5 } else { 2.0 };
@@ -371,7 +371,11 @@ fn ring_distance(screen: &[Option<Pos2>], p: Pos2) -> Option<(f32, usize)> {
 /// The ring under screen point `press` (comp px `at`), ready to drag.
 pub(super) fn ring_at(rings: &[RingHit], press: Pos2, at: [f64; 2]) -> Option<RingDrag> {
     let step = std::f64::consts::TAU / RING_STEPS as f64;
-    let (ring, i) = rings.iter().filter_map(|r| ring_distance(&r.screen, press).filter(|(d, _)| *d < RING_GRAB).map(|(d, i)| (r, i, d))).min_by(|a, b| a.2.total_cmp(&b.2)).map(|(r, i, _)| (r, i))?;
+    let (ring, i) = rings
+        .iter()
+        .filter_map(|r| ring_distance(&r.screen, press).filter(|(d, _)| *d < RING_GRAB).map(|(d, i)| (r, i, d)))
+        .min_by(|a, b| a.2.total_cmp(&b.2))
+        .map(|(r, i, _)| (r, i))?;
     let a = (*ring.comp.get(i)?)?;
     let b = (*ring.comp.get((i + 1) % ring.comp.len())?)?;
     Some(RingDrag {
@@ -388,7 +392,7 @@ pub(super) fn ring_at(rings: &[RingHit], press: Pos2, at: [f64; 2]) -> Option<Ri
 /// (comp px per radian); `snap` rounds to 15 degrees.
 fn ring_degrees(tangent: [f64; 2], d: [f64; 2], snap: bool) -> Option<f64> {
     let t2 = tangent[0] * tangent[0] + tangent[1] * tangent[1];
-    if !(t2 > 1e-9) {
+    if t2.is_nan() || t2 <= 1e-9 {
         return None;
     }
     let deg = ((d[0] * tangent[0] + d[1] * tangent[1]) / t2).to_degrees();
@@ -405,7 +409,10 @@ pub(super) fn apply_ring(app: &mut EffectcraftApp, d: &RingDrag, cpt: [f64; 2], 
     let (path, value) = if d.orientation {
         ("transform/orientation", json!(v))
     } else {
-        (["transform/rotationX", "transform/rotationY", "transform/rotation"].get(d.axis).copied().unwrap_or("transform/rotation"), json!(v.get(d.axis).copied().unwrap_or(0.0)))
+        (
+            ["transform/rotationX", "transform/rotationY", "transform/rotation"].get(d.axis).copied().unwrap_or("transform/rotation"),
+            json!(v.get(d.axis).copied().unwrap_or(0.0)),
+        )
     };
     let _ = app.session.execute("prop.set", json!({"layer": d.layer.0, "path": path, "value": value, "merge": merge}));
 }
@@ -511,7 +518,14 @@ mod tests {
 
     #[test]
     fn ring_hit_test_picks_the_nearest_ring() {
-        let circle = |r: f32| -> Vec<Option<Pos2>> { (0..RING_STEPS).map(|i| { let t = i as f32 / RING_STEPS as f32 * std::f32::consts::TAU; Some(pos2(r * t.cos(), r * t.sin())) }).collect() };
+        let circle = |r: f32| -> Vec<Option<Pos2>> {
+            (0..RING_STEPS)
+                .map(|i| {
+                    let t = i as f32 / RING_STEPS as f32 * std::f32::consts::TAU;
+                    Some(pos2(r * t.cos(), r * t.sin()))
+                })
+                .collect()
+        };
         let ring = |axis: usize, r: f32| {
             let screen = circle(r);
             let comp = screen.iter().map(|p| p.map(|p| [f64::from(p.x), f64::from(p.y)])).collect();
